@@ -29,8 +29,17 @@ redirector/peer overrides Squid заменяет каждый Host на пров
 duplicates или синтаксического мусора. Изменение redirector/cache_peer/header rewrite
 требует повторной оценки этого договора.
 
-Это не приёмка данного Compose или сети аудитории. Windows firewall, браузер/JVM,
-полный учебный маршрут и серверное размещение ещё требуют native-пилота.
+Публичный standalone Compose отдельно проверен на Linux с образом 7.7, новым
+issuer и отдельным state: native helper/parse без сети, `up`/`ps`/`down`, actual
+UID/caps/binds и loopback listener. Независимые HEAD подтвердили PL 302, Moodle 303,
+посторонний shared-IP Host `bsu.by` fresh и вторым запросом в том же TLS-соединении
+получил собственный `TCP_DENIED/403` с `HIER_NONE`; финальный Moodle снова дал 303.
+Client TLS verify=0; после `down` контейнер и listener отсутствуют, CA и leaf DB
+сохранены. Отдельный foreign `.invalid` получил собственный 503
+`ERR_SECURE_CONNECT_FAIL`: [исходники release](https://github.com/squid-cache/squid/blob/SQUID_7_7/src/client_side.cc#L1361-L1399) допускают certificate check до `http_access`,
+но точная native причина не захвачена, поэтому этот случай не считается проверкой ACL.
+Это локальная проверка поставки. Windows firewall, браузер/JVM, полный учебный
+маршрут, сеть аудитории и серверное размещение ещё требуют native-пилота.
 
 ## Входы оператора
 
