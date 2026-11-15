@@ -44,9 +44,10 @@ def normalized_site_url(site_url: str) -> str:
     return site_url.rstrip("/") + "/"
 
 
-def preview_profiles(checkout: Path, site_url: str) -> None:
+def preview_profiles(checkout: Path, site_url: str) -> list[Path]:
     """Штатный Quarto profile существует только в одноразовом checkout."""
     base = normalized_site_url(site_url)
+    written: list[Path] = []
     import yaml
 
     def metadata_file(path, required=False):
@@ -123,6 +124,7 @@ def preview_profiles(checkout: Path, site_url: str) -> None:
             path.write_text(
                 yaml.safe_dump(project, allow_unicode=True, sort_keys=False)
             )
+            written.append(path)
 
     root: dict[str, object] = {
         "website": {"site-url": base},
@@ -136,6 +138,7 @@ def preview_profiles(checkout: Path, site_url: str) -> None:
         root["reference-catalog"] = {"imports": own_imports}
     metadata_file(checkout / "_quarto-preview.yml")
     (checkout / "_quarto-preview.yml").write_text(json.dumps(root) + "\n")
+    written.append(checkout / "_quarto-preview.yml")
     # Профиль каждого subproject получает собственный publication URL и общий portal.
     for name, child, child_config in children:
         value = {
@@ -150,6 +153,8 @@ def preview_profiles(checkout: Path, site_url: str) -> None:
             value["reference-catalog"] = {"imports": imports}
         metadata_file(child / "_quarto-preview.yml")
         (child / "_quarto-preview.yml").write_text(json.dumps(value) + "\n")
+        written.append(child / "_quarto-preview.yml")
+    return written
 
 
 def real_directory(path: Path, *, create: bool = False) -> None:
@@ -272,8 +277,162 @@ def resume_context(work: Path, site_url: str | None) -> None:
         raise ValueError("resume-export не меняет --site-url; нужен свежий prepare")
 
 
+def git_environment() -> dict[str, str]:
+    """Не разрешать окружению направить private Git в чужой index/worktree."""
+    env = {
+        key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+    }
+    env.update(
+        GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", GIT_OPTIONAL_LOCKS="0"
+    )
+    return env
+
+
+def snapshot_git(source: Path, checkout: Path, env: dict[str, str]) -> None:
+    """Свой Git context; исходный index читается, физические bytes не меняются."""
+    git_env = dict(env, LC_ALL="C")
+    probe = subprocess.run(  # nosec B603, B607 # read-only installed Git discovery in sanitized environment
+        ["git", "-C", str(source), "rev-parse", "--show-toplevel"],
+        env=git_env,
+        capture_output=True,
+    )
+    tracked = b""
+    info_excludes: bytes | None = None
+    local_excludes: bytes | None = None
+    if probe.returncode == 0:
+        tracked = subprocess.run(  # nosec B603, B607 # read-only installed Git index query
+            ["git", "-C", str(source), "ls-files", "--cached", "-z"],
+            env=git_env,
+            check=True,
+            capture_output=True,
+        ).stdout
+        info_result = subprocess.run(  # nosec B603, B607 # read-only source Git metadata path
+            ["git", "-C", str(source), "rev-parse", "--git-path", "info/exclude"],
+            env=git_env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        info_path = source / info_result.stdout.strip()
+        if info_path.is_file():
+            info_excludes = info_path.read_bytes()
+        configured = subprocess.run(  # nosec B603, B607 # one effective local/worktree Git setting; global config disabled
+            [
+                "git",
+                "-C",
+                str(source),
+                "config",
+                "--path",
+                "--get",
+                "core.excludesFile",
+            ],
+            env=git_env,
+            capture_output=True,
+            text=True,
+        )
+        if configured.returncode == 0:
+            path = source / configured.stdout.strip()
+            # Сохраняем явное переопределение даже при отсутствующем ignore-файле.
+            local_excludes = path.read_bytes() if path.is_file() else b""
+        elif configured.returncode != 1:
+            configured.check_returncode()
+    elif (
+        (source / ".git").exists()
+        or (source / ".git").is_symlink()
+        or probe.returncode != 128
+        or b"not a git repository" not in probe.stderr
+    ):
+        probe.check_returncode()
+    # Архив без Git допустим, даже под посторонним нерабочим /tmp/.git.
+    private = [
+        "git",
+        "--literal-pathspecs",
+        "--git-dir=" + str(checkout / ".git"),
+        "--work-tree=" + str(checkout),
+    ]
+    subprocess.run(  # nosec B603 # explicit private Git context; no inherited hooks/config
+        private + ["init", "--quiet", "--template=", "--initial-branch=local-prepare"],
+        cwd=checkout,
+        env=env,
+        check=True,
+    )
+    info_dir = checkout / ".git/info"
+    if info_excludes is not None or local_excludes is not None:
+        info_dir.mkdir(exist_ok=True)
+    if info_excludes is not None:
+        (info_dir / "exclude").write_bytes(info_excludes)
+    if local_excludes is not None:
+        private_excludes = info_dir / "source-excludes"
+        private_excludes.write_bytes(local_excludes)
+        subprocess.run(  # nosec B603 # explicit private config refers only to private copied ignore bytes
+            private + ["config", "--local", "core.excludesFile", str(private_excludes)],
+            cwd=checkout,
+            env=env,
+            check=True,
+        )
+    present = []
+    for name in tracked.split(b"\0"):
+        if not name:
+            continue
+        path = Path(os.fsdecode(name))
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("Небезопасный tracked source path")
+        copied = checkout / path
+        if copied.is_file() or copied.is_symlink():
+            present.append(name)
+    if present:
+        subprocess.run(  # nosec B603 # installed private Git argv; literal paths from source index
+            private
+            + [
+                "add",
+                "--intent-to-add",
+                "--force",
+                "--pathspec-from-file=-",
+                "--pathspec-file-nul",
+            ],
+            cwd=checkout,
+            env=env,
+            input=b"\0".join(present) + b"\0",
+            check=True,
+        )
+
+
+def install_snapshot_dependencies(checkout: Path, env: dict[str, str]) -> None:
+    """Штатный npm lock устанавливается только в одноразовом source."""
+    package = checkout / "package.json"
+    if not package.exists() and not package.is_symlink():
+        return
+    lock = checkout / "package-lock.json"
+    for path in (package, lock):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("Для snapshot npm ci нужен обычный файл: " + str(path))
+    npm = shutil.which("npm", path=env.get("PATH"))
+    if npm is None:
+        raise ValueError("Не найдена системная команда: npm")
+    run([npm, "ci", "--ignore-scripts", "--include=dev"], cwd=checkout, env=env)
+
+
+def format_preview_configs(
+    checkout: Path, written: list[Path], env: dict[str, str]
+) -> None:
+    """Авторские исходники не форматируем; только наши изменённые YAML configs."""
+    if not written:
+        return
+    formatter = shutil.which("prettier", path=env.get("PATH"))
+    if formatter is None:
+        raise ValueError("Не найдена системная команда: prettier")
+    subprocess.run(  # nosec B603 # installed course formatter, explicit generated config paths
+        [formatter, "--write", "--", *[str(path) for path in written]],
+        cwd=checkout,
+        env=env,
+        check=True,
+    )
+
+
 def build_environment(work: Path) -> dict[str, str]:
-    env = dict(os.environ, COURSE_PREVIEW_PROFILE="1", PYTHONDONTWRITEBYTECODE="1")
+    env = dict(
+        git_environment(), COURSE_PREVIEW_PROFILE="1", PYTHONDONTWRITEBYTECODE="1"
+    )
     cache = work / ".cache"
     real_directory(cache, create=True)
     env["XDG_CACHE_HOME"] = str(cache)
@@ -308,7 +467,7 @@ def main() -> None:
     for binary in (
         ()
         if args.prepared
-        else ("go-task", "quarto", "python3", "pyright", "shellcheck", "tsc")
+        else ("git", "go-task", "quarto", "python3", "pyright", "shellcheck", "tsc")
     ):
         if not shutil.which(binary):
             parser.error("Не найдена системная команда: " + binary)
@@ -430,7 +589,12 @@ def main() -> None:
                     ".gradle",
                 ),
             )
-            preview_profiles(checkout, args.site_url)
+            env = build_environment(work)
+            snapshot_git(source, checkout, env)
+            written = preview_profiles(checkout, args.site_url)
+            install_snapshot_dependencies(checkout, env)
+            env["PATH"] = str(checkout / "node_modules/.bin") + os.pathsep + env["PATH"]
+            format_preview_configs(checkout, written, env)
             (work / ".prepare-context.json").write_text(
                 json.dumps(
                     {
@@ -439,7 +603,6 @@ def main() -> None:
                 )
                 + "\n"
             )
-            env = build_environment(work)
             run(
                 [
                     "go-task",

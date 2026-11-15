@@ -19,9 +19,26 @@ go-task up COURSE=java
 строит сайт; отдельный export выполняет полный author capture для native.
 Полный HTML-сайт перед export не строится.
 
-Local не устанавливает packages. Обычный `prepare` копирует установленный
+Local не обновляет Quarto packages. Обычный `prepare` копирует установленный
 `_extensions` курса вместе с исходниками; соседние расширения не нужны.
-Обновление выполняет владелец курса заранее штатным `quarto add`. Для совместной
+Временный source получает собственный стандартный Git context: Local читает
+исходный index, сохраняет включение tracked-ignored файлов и переносит только
+правила `info/exclude` и явно настроенного `core.excludesFile` в приватный Git.
+Чужие `.git`, refs, hooks и index не копируются. Dirty и обычные untracked bytes
+сохраняются; исходные repository/index не изменяются. Каталог source без Git
+также допустим: для него учитываются физические неignored файлы.
+
+Если source содержит `package.json`, перед `build` выполняется штатный
+`npm ci --ignore-scripts --include=dev` по его `package-lock.json` внутри
+одноразового checkout. Нужны npm и доступ к пакетам либо обычному npm cache;
+devDependencies устанавливаются и при `NODE_ENV=production`, lifecycle scripts
+не исполняются. Готовые `node_modules` исходного курса не копируются. При
+отсутствии lock/npm или ошибке установки build и публикация не выполняются.
+Созданные preview-конфигурации и только реально изменённые Local YAML configs
+форматируются штатным Prettier с настройками курса перед его проверками;
+остальные авторские файлы автоматически не форматируются.
+
+Обновление Quarto выполняет владелец курса заранее штатным `quarto add`. Для совместной
 разработки сначала явно установите выбранную GitHub dev-ветку тем же механизмом,
 сохраняя namespace владельца и hook paths курса, затем запустите `prepare`:
 
