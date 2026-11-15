@@ -1,6 +1,6 @@
-# Локальная инфраструктура PrairieLearn и Moodle
+# Поставка PrairieLearn и Moodle
 
-Отдельный Docker Compose-стенд с PrairieLearn Community, тестовой Moodle, постоянными хранилищами и HTTPS-прокси. Gateway и Bridge подключаются только с уже подготовленными штатными конфигурациями. Базовый запуск не требует исходников курса или будущей CI/CD; dependency Platform
+`prairielearn-deployment` объединяет инфраструктуру локальной разработки и поставки PrairieLearn. Сейчас здесь есть отдельный Docker Compose-стенд с PrairieLearn Community, тестовой Moodle, постоянными хранилищами и HTTPS-прокси, dev-preview курсов и Ansible-доставка готовых выпусков. Gateway и Bridge подключаются только с уже подготовленными штатными конфигурациями. Базовый запуск не требует исходников курса или будущей CI/CD; dependency Platform
 получается штатным Git submodule, без собственного registry.
 
 **Готовность:** отдельная локальная приёмка чистого запуска, TLS/Moodle/LTI, ролей, Workspace и backup/restore выполнена на точных runtime images. Результаты и границы описаны в [отчёте приёмки](docs/local-acceptance-20261111.md). Для новой установки оператор повторяет её проверки; локальный опыт не заменяет hosted delivery или выбранный VM target.
@@ -10,7 +10,30 @@
 кандидата, успешная native-загрузка активирует его сайт. Этот режим и его
 проверки описаны в [инструкции preview](docs/preview.md) и
 [сборке и доставке](docs/build-delivery.md). Production Git-sync и готовый student-сайт описаны в
-[локальном production-маршруте](docs/production-local.md). Быстрый контроль Local — `go-task check`.
+[локальном production-маршруте](docs/production-local.md). Быстрый контроль Deployment — `go-task check`.
+
+## Границы запуска и переименования
+
+Обычный `proxy` в `compose.yml` — Nginx reverse proxy для HTTPS к PL/Moodle и,
+при подключённом auth override, Gateway. Это не экзаменационный forward proxy.
+`go-task up COURSE=…` использует отдельный `compose.preview.yml` и не запускает
+этот Nginx, Moodle или Gateway. Ни один из этих запусков сейчас не поднимает
+экзаменационный прокси или контроллер. Их будущая интеграция с `exam-lab` должна
+быть явной и необязательной; договор контроллера уточняется после Windows-пилота.
+
+Прежнее имя репозитория — `prairielearn-local`. Переименование GitHub не меняет
+Compose project: default `prairielearn-local` сохранён намеренно, как и имена
+volumes, preview projects и расположение state. Для существующего checkout
+достаточно обновить remote URL; не переименовывайте его каталог и не создавайте
+новый state ради нового имени репозитория. Сохраните `.env`, `COMPOSE_PROJECT_NAME`,
+`STATE_DIR`, абсолютный `HOST_JOBS_DIR` и весь прежний набор Compose overrides.
+Перенос каталога требует отдельной проверки bind mounts: jobs по умолчанию
+зависят от `${PWD}`. Новый clone из примера ниже предназначен для отдельной установки.
+
+Существующая VM пока использует отдельную историческую сборку вне этого Git.
+Переименование и локальная приёмка не означают её переноса. Общее описание
+поставки должно сначала воспроизвести её реальные nonsecret настройки и сохранить
+внешние private inputs, курсы, ключи и пользовательские данные.
 
 ## Требования
 
@@ -24,8 +47,8 @@
 ## Подготовка
 
 ```sh
-git clone https://github.com/Afonenko-Course-Tools/prairielearn-local.git
-cd prairielearn-local
+git clone https://github.com/Afonenko-Course-Tools/prairielearn-deployment.git
+cd prairielearn-deployment
 git submodule update --init deps/platform
 docker compose up -d --build --wait
 docker compose ps -a

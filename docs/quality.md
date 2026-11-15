@@ -1,4 +1,4 @@
-# Проверки собственных файлов Local
+# Проверки собственных файлов Deployment
 
 `go-task check` проверяет Python (Ruff E4/E7/E9/F/B, полный Ruff format,
 Pyright с отказом на warnings), JavaScript (strict checkJs/JSDoc и синтаксис Node),
@@ -38,7 +38,7 @@ Bandit сканирует все собственные Python файлы, вк�
   операциями req/verify/x509. Hostname проходят DNS-проверку, пути получены из
   явного state аргумента; существующие ключи сохраняются. CLI обслуживает доверенный
   оператор, системное доверие не меняется.
-- B603 в prepare/preview/quality: команды составляются Local как список аргументов,
+- B603 в prepare/preview/quality: команды составляются Deployment как список аргументов,
   выполняются установленными CLI без shell. Пути, release aliases и публикация
   проверяются до изменения готовой выдачи. Quality запускает только анализаторы,
   синтаксические проверки, статический Compose config и тесты.
@@ -58,7 +58,7 @@ YAML форматирует Prettier; yamllint проверяет структу
 проходят только форматирование; учебное содержание зависимостей не меняется.
 
 Установленный ansible-core может печатать сообщения о deprecated встроенных
-callback plugins `oneline` и `tree` при перечислении plugin API. Local их не
+callback plugins `oneline` и `tree` при перечислении plugin API. Deployment их не
 использует; то же сообщение воспроизводится командой `ansible-doc -t callback -l`.
 Это предупреждение инструмента, а lint результат playbooks остаётся
 `0 failure(s), 0 warning(s)`; глобальное подавление deprecations не включено.

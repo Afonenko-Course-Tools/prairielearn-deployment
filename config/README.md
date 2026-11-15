@@ -10,6 +10,10 @@
 
 Moodle пишет публичную регистрацию в `/state/moodle/registration.json`. Отдельный output-каталог принадлежит www-data; accounts и DB password доступны группе 33 только для чтения. Корень state даёт traversal, private TLS key остаётся 0600. Наличие тестовой Moodle activity ещё не означает работающий PL LTI-вход.
 
+Обычный `proxy` — HTTPS reverse proxy Nginx. Экзаменационные forward proxy и
+контроллер не входят в базовый Compose или dev-preview; будущий договор с
+`exam-lab` определяется отдельно после Windows-пилота.
+
 ## Необязательный auth override
 
 `compose.auth.yml` подключается отдельно обычным `-f`. Он принимает готовые native `PL_CONFIG_FILE`, `BRIDGE_CONFIG_DIR/config.json` с реальными bindings и его tokenFile, `GATEWAY_CONFIG_DIR/runtime.json` с его secret/CA-файлами и `handoff-auth.conf`. Конфигурации должны согласовываться с опубликованными приложениями и сохранять прежние session/database keys. Gateway config должен быть доступен штатному UID 1000, его SQLite хранится в отдельном volume. Ни course IDs, ни регистрации Gateway здесь не выдумываются и не генерируются.

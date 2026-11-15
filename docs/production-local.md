@@ -3,7 +3,7 @@
 Production использует `compose.yml`, при необходимости `compose.auth.yml` и
 `compose.workspace.yml`. Dev-preview на 8088/8089 имеет другие projects/state.
 Всегда передавайте один и тот же `--env-file` и набор `-f` всем командам своего
-стенда. Local init задаёт `workersCount: 1`; сохраните это явное значение и
+стенда. Deployment init задаёт `workersCount: 1`; сохраните это явное значение и
 в предоставленном `PL_CONFIG_FILE`. Native default может выбирать workers по
 CPU компьютера, а Docker `cpus` не заменяет этот параметр. Native DB, ключи, Moodle и Gateway сохраняются между обновлениями.
 
@@ -40,7 +40,7 @@ git -C /private/native-java rev-parse HEAD
 каноническим producer. Force push не требуется. Для System Practice повторяется
 тот же маршрут в его собственном native repository.
 
-Первый administrator создаётся существующим Local bootstrap. PAT создают
+Первый administrator создаётся существующим Deployment bootstrap. PAT создают
 штатной формой `/pl/settings` после входа и сохраняют вне Git. Публичного REST
 API создания PAT нет. Git repository/branch задают штатной административной
 страницей PL; повторный sync выполняет существующий native REST API.
