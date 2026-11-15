@@ -12,6 +12,10 @@
 [сборке и доставке](docs/build-delivery.md). Production Git-sync и готовый student-сайт описаны в
 [локальном production-маршруте](docs/production-local.md). Быстрый контроль Deployment — `go-task check`.
 
+Для готовых конфигураций, прежнего TLS на 443 и заранее восстановленной БД есть
+отдельный [steady runtime](docs/runtime.md) без fixture bootstrap и тестовой Moodle.
+Он ещё не подтверждает совместимость site layout действующей VM.
+
 ## Границы запуска и переименования
 
 Обычный `proxy` в `compose.yml` — Nginx reverse proxy для HTTPS к PL/Moodle и,

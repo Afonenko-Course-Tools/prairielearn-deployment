@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+!.env.runtime.example
 state/
 __pycache__/
 *.pyc
