@@ -14,7 +14,11 @@ DNS SAN. Исправления проверены в release 7.2 и 7.7; обр
 сборка. Native UID/GID проверяется при build и равен `13:13`.
 
 В отдельной Linux canary на 7.7 подтверждены PL/Moodle с client TLS verify=0
-и включённой upstream verification; отдельный bad-CA negative ещё pending.
+и включённой upstream verification. Отдельный контроль с явным GlobalSign-only
+bundle без PL CA сохранил Moodle 303 и дал PL собственный Squid 503
+`ERR_SECURE_CONNECT_FAIL`; client TLS verify=0 в обоих случаях. PL access log
+показал `HIER_NONE`. Это принятый negative отсутствующего upstream CA,
+не проверка всех вариантов TLS-отказа и не Windows-приёмка.
 Подтверждён собственный отказ Squid для постороннего Host, включая второй запрос
 в том же TLS-соединении, и финальные разрешённые запросы после negatives.
 Duplicate Host с разрешённым первым и посторонним вторым значением получил 303,
