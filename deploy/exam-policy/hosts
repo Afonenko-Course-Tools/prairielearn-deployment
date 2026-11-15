@@ -1,0 +1,3 @@
+# Тот же согласованный endpoint, что в destinations.conf. Ровно один IP
+# для каждого разрешённого DNS имени: штатный Squid static host pin.
+198.51.100.20 moodle.example.invalid

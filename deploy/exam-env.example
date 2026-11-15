@@ -1,0 +1,7 @@
+# Это отдельный env-file вне Git; все пути абсолютные на том же Docker host.
+EXAM_PROJECT_NAME=exam-canary
+EXAM_PROXY_IMAGE=site-exam-squid:7
+EXAM_SQUID_CONFIG=/srv/exam-proxy/squid.conf
+EXAM_POLICY_DIR=/srv/exam-proxy/policy
+EXAM_TLS_DIR=/srv/exam-proxy/private-tls
+EXAM_STATE_DIR=/srv/exam-proxy/state
