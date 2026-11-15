@@ -2,8 +2,12 @@
 
 `go-task prepare COURSE=java COURSE_ROOT=/absolute/Java` готовит сайт и native пакет, `go-task up COURSE=java`
 запускает их. Для System Practice используется `COURSE=system-practice` с
-явным `COURSE_ROOT=/absolute/System-Practice`. Перед сборкой установите Quarto
-packages штатными командами курса; Local их не устанавливает.
+явным `COURSE_ROOT=/absolute/System-Practice`. Установленные Quarto packages
+входят в обычный clone курса; Local их не обновляет. Для `prepare` нужны Git
+и Prettier; при наличии `package.json` также npm. Locked devDependencies
+устанавливаются штатным `npm ci` в одноразовом source, проверки курса выполняются
+в его собственном Git context. Ошибка подготовки сохраняет прежние `prepared`
+и `active`; подробности — в [сборке и доставке](build-delivery.md).
 По умолчанию сайт и `/pl/` доступны на `http://127.0.0.1:8088` для Java,
 на `http://127.0.0.1:8089` для System Practice.
 
