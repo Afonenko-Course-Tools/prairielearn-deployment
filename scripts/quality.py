@@ -170,6 +170,15 @@ def compose_check(files: list[str], isolated: Path) -> None:
             "GATEWAY_CONFIG_DIR": str(isolated / "gateway"),
             "WORKSPACE_DOCKER_SOCKET": str(isolated / "unused.sock"),
             "SITE_ROOT": str(isolated / "site"),
+            "DEPLOY_ROOT": str(isolated / "deployment"),
+            "PL_IMAGE": "example.invalid/community@sha256:" + "1" * 64,
+            "GATEWAY_IMAGE": "example.invalid/gateway@sha256:" + "2" * 64,
+            "NGINX_IMAGE": "example.invalid/nginx@sha256:" + "3" * 64,
+            "NGINX_CONFIG": str(isolated / "nginx.conf"),
+            "TLS_DIR": str(isolated / "tls"),
+            "PROXY_PRIVATE": str(isolated / "proxy-private"),
+            "PL_CA_FILE": str(isolated / "public-ca.crt"),
+            "PL_TLS_NAME": "pl.example.invalid",
         }
     )
     for name in files:
@@ -182,7 +191,11 @@ def compose_check(files: list[str], isolated: Path) -> None:
                 "--project-name",
                 "local-quality",
             ]
-            if name != "compose.yml" and name != "compose.preview.yml":
+            if name not in (
+                "compose.yml",
+                "compose.preview.yml",
+                "compose.runtime.yml",
+            ):
                 command += ["-f", "compose.yml"]
             run([*command, "-f", name, "config", "--quiet"], env=env)
 

@@ -1,3 +1,4 @@
+# Историческое имя project сохраняет существующие volumes после переименования GitHub.
 name: ${COMPOSE_PROJECT_NAME:-prairielearn-local}
 
 x-state: &state

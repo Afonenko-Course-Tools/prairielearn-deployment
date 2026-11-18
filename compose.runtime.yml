@@ -1,0 +1,146 @@
+# Самостоятельный steady runtime; не объединять с fixture compose.yml через -f.
+# Compose >=2.24.4 нужен для штатных !reset/!override при extends.
+name: ${COMPOSE_PROJECT_NAME:?Задайте отдельное имя runtime проекта}
+
+services:
+  pl:
+    extends:
+      file: compose.yml
+      service: pl
+    image: ${PL_IMAGE:?Нужен точный сохранённый Community image для восстановленной БД}
+    entrypoint: [sh, -ec]
+    command:
+      - >-
+        test -s /var/postgres/PG_VERSION ||
+        { echo 'Runtime требует восстановленный PostgreSQL cluster' >&2; exit 64; };
+        exec bash /local/config/start-pl.sh
+    environment: !override
+      NODE_ENV: production
+      PL_CONFIG_PATH: /run/pl-native/config.json
+      HOST_JOBS_DIR: ${DEPLOY_ROOT:?Нужен абсолютный существующий deployment root}/jobs
+    depends_on: !reset {}
+    volumes: !override
+      - type: bind
+        source: ${DEPLOY_ROOT}/postgres
+        target: /var/postgres
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${DEPLOY_ROOT}/files
+        target: /files
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${DEPLOY_ROOT}/s3rver
+        target: /PrairieLearn/s3rver
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${DEPLOY_ROOT}/courses
+        target: /course
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${DEPLOY_ROOT}/jobs
+        target: /jobs
+        bind: { create_host_path: false }
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${PL_CONFIG_FILE:?Нужен готовый native PL config с прежними ключами}
+        target: /run/pl-native/config.json
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./config/start-pl.sh
+        target: /local/config/start-pl.sh
+        read_only: true
+        bind: { create_host_path: false }
+
+  bridge:
+    extends:
+      file: compose.auth.yml
+      service: bridge
+    image: ${PL_IMAGE:?Нужен точный сохранённый Community image}
+    depends_on: !override
+      pl: { condition: service_healthy }
+    volumes: !override
+      - type: bind
+        source: ${PL_CONFIG_FILE:?Нужен готовый native PL config}
+        target: /PrairieLearn/config.json
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${BRIDGE_CONFIG_DIR:?Нужен готовый Bridge config.json и его tokenFile}
+        target: /run/pl-gateway
+        read_only: true
+        bind: { create_host_path: false }
+
+  gateway:
+    extends:
+      file: compose.auth.yml
+      service: gateway
+    image: ${GATEWAY_IMAGE:?Нужен точный сохранённый Gateway image}
+    user: "1000:1000"
+    depends_on: !override
+      bridge: { condition: service_healthy }
+    volumes: !override
+      - type: bind
+        source: ${GATEWAY_CONFIG_DIR:?Нужен готовый Gateway runtime.json и его секреты}
+        target: /run/config
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${DEPLOY_ROOT}/gateway-data
+        target: /var/lib/gateway
+        bind: { create_host_path: false }
+
+  proxy:
+    extends:
+      file: compose.yml
+      service: proxy
+    image: ${NGINX_IMAGE:?Нужен точный сохранённый Nginx image}
+    command: [nginx, -c, /etc/nginx/nginx.conf, -g, "daemon off;"]
+    ports: !override
+      - ${BIND_IP:-127.0.0.1}:443:443
+    networks: !override
+      default: {}
+    depends_on: !override
+      gateway: { condition: service_healthy }
+    volumes: !override
+      - type: bind
+        source: ${NGINX_CONFIG:?Нужен готовый Nginx config для HTTPS 443}
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${TLS_DIR:?Нужен каталог прежних server.crt и server.key}
+        target: /tls
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${PROXY_PRIVATE:?Нужен каталог прежнего handoff-auth.conf}
+        target: /etc/nginx/private
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${PL_CA_FILE:?Нужен публичный CA bundle прежней TLS identity}
+        target: /run/pl-tls/ca.crt
+        read_only: true
+        bind: { create_host_path: false }
+    healthcheck:
+      test:
+        [
+          CMD,
+          curl,
+          --fail,
+          --silent,
+          --show-error,
+          --noproxy,
+          "*",
+          --max-time,
+          "4",
+          --cacert,
+          /run/pl-tls/ca.crt,
+          --connect-to,
+          "${PL_TLS_NAME:?Нужен прежний TLS hostname или IP без схемы и порта}:443:127.0.0.1:443",
+          "https://${PL_TLS_NAME}/healthz",
+        ]

@@ -19,9 +19,9 @@ go-task up COURSE=java
 строит сайт; отдельный export выполняет полный author capture для native.
 Полный HTML-сайт перед export не строится.
 
-Local не обновляет Quarto packages. Обычный `prepare` копирует установленный
+Deployment не обновляет Quarto packages. Обычный `prepare` копирует установленный
 `_extensions` курса вместе с исходниками; соседние расширения не нужны.
-Временный source получает собственный стандартный Git context: Local читает
+Временный source получает собственный стандартный Git context: Deployment читает
 исходный index, сохраняет включение tracked-ignored файлов и переносит только
 правила `info/exclude` и явно настроенного `core.excludesFile` в приватный Git.
 Чужие `.git`, refs, hooks и index не копируются. Dirty и обычные untracked bytes
@@ -34,7 +34,7 @@ Local не обновляет Quarto packages. Обычный `prepare` копи
 devDependencies устанавливаются и при `NODE_ENV=production`, lifecycle scripts
 не исполняются. Готовые `node_modules` исходного курса не копируются. При
 отсутствии lock/npm или ошибке установки build и публикация не выполняются.
-Созданные preview-конфигурации и только реально изменённые Local YAML configs
+Созданные preview-конфигурации и только реально изменённые Deployment YAML configs
 форматируются штатным Prettier с настройками курса перед его проверками;
 остальные авторские файлы автоматически не форматируются.
 
@@ -45,7 +45,7 @@ devDependencies устанавливаются и при `NODE_ENV=production`, 
 ```sh
 cd /absolute/Java
 quarto add Afonenko-Course-Tools/quarto-course-prairielearn@dev-branch --no-prompt
-cd /absolute/prairielearn-local
+cd /absolute/prairielearn-deployment
 go-task prepare COURSE=java COURSE_ROOT=/absolute/Java
 ```
 
@@ -54,7 +54,7 @@ go-task prepare COURSE=java COURSE_ROOT=/absolute/Java
 непосредственно. `quarto add /absolute/checkout` создаёт иной layout: такой
 переход требует свежей установки и явного согласования всех hook paths курса.
 Для subprojects установите package также в требуемых project scopes по
-инструкциям курса. Local не выбирает версии, не читает source manifests и
+инструкциям курса. Deployment не выбирает версии, не читает source manifests и
 не заменяет установленные packages рабочими деревьями автоматически.
 `PLATFORM_ROOT=/absolute/platform` явно выбирает иной проверенный Platform
 checkout вместо gitlink; обновление default выполняется обычными Git средствами.
@@ -173,10 +173,10 @@ course lock проверяет именно этот job, сохранённый
 Private checks на сервер не отправляются.
 Production Ubuntu provisioning и пользовательские accounts этим play не меняются.
 
-## Проверки Local
+## Проверки Deployment
 
 `go-task check` выполняет короткие проверки Python, публикации и активации,
 ShellCheck и Node-проверки служебных входов. Та же команда блокирует ошибки в
 `.github/workflows/check.yml`. Курсовые render/export и Docker в неё не входят.
 Межрепозиторная проверка course Taskfiles явно пропускается в отдельном clone
-Local без явно заданных `JAVA_ROOT` и `SP_ROOT`; основной набор Local выполняется полностью.
+Deployment без явно заданных `JAVA_ROOT` и `SP_ROOT`; основной набор Deployment выполняется полностью.

@@ -1,0 +1,38 @@
+# Самостоятельная экспериментальная поставка; не добавлять к fixture через -f.
+name: ${EXAM_PROJECT_NAME:?Задайте отдельное имя экзаменационного проекта}
+
+services:
+  exam-proxy:
+    profiles: [exam]
+    image: ${EXAM_PROXY_IMAGE:?Задайте точный проверенный Squid OpenSSL 7 image}
+    user: "13:13"
+    network_mode: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: { soft: 0, hard: 0 }
+    volumes:
+      - type: bind
+        source: ${EXAM_SQUID_CONFIG:?Нужен готовый operator-owned squid.conf}
+        target: /etc/squid/squid.conf
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${EXAM_POLICY_DIR:?Нужны согласованные destinations.conf и hosts}
+        target: /etc/squid/exam-policy
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${EXAM_TLS_DIR:?Нужны отдельные issuer.crt issuer.key upstream-ca.pem}
+        target: /run/exam-tls
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${EXAM_STATE_DIR:?Нужен отдельный закрытый state со spool log run}
+        target: /var/lib/exam-squid
+        bind: { create_host_path: false }
+    mem_limit: 256m
+    cpus: 0.5
+    stop_grace_period: 10s
+    restart: unless-stopped

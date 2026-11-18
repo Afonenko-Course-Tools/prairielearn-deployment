@@ -1,4 +1,4 @@
-# Проверки собственных файлов Local
+# Проверки собственных файлов Deployment
 
 `go-task check` проверяет Python (Ruff E4/E7/E9/F/B, полный Ruff format,
 Pyright с отказом на warnings), JavaScript (strict checkJs/JSDoc и синтаксис Node),
@@ -16,12 +16,18 @@ hadolint, PHP и Docker Compose. Используйте системные па�
 Отсутствующая CLI, ненулевой exit или предупреждение анализатора останавливают gate.
 
 Compose проверяется только штатным `docker compose config --quiet`: основной
-файл, отдельный preview и каждый найденный overlay с основным файлом. Используются
+файл, самостоятельные preview/runtime и каждый найденный overlay с основным файлом. Используются
 синтетические пути во временном каталоге и `--env-file /dev/null`; `.env`, ключи,
 аккаунты и состояние пользователя не читаются. Docker daemon не требуется,
 контейнеры и сервисы не запускаются. Инициализируйте submodule `deps/platform`
 или передайте `go-task check PLATFORM_ROOT=/абсолютный/Platform` с настоящим `compose/runtime.yml`.
 Ansible lint получает отдельные temporary home/cache; deploy playbooks не исполняются.
+
+Runtime tests дополнительно читают JSON результата настоящего `docker compose
+config`: проверяют отсутствие fixture services/dependencies/state mounts,
+единственный ingress 443, локальную проверку прежней TLS identity, точные image
+inputs и отказы при отсутствии обязательных параметров. Paths/images в тестах
+синтетические; это проверка Compose graph, не restore или VM-приёмка.
 
 JSDoc и `types/native.d.ts` описывают только используемые PL DB/locks/user/schema
 API. Runtime по-прежнему загружает установленные пакеты PL; эти объявления не
@@ -38,7 +44,7 @@ Bandit сканирует все собственные Python файлы, вк�
   операциями req/verify/x509. Hostname проходят DNS-проверку, пути получены из
   явного state аргумента; существующие ключи сохраняются. CLI обслуживает доверенный
   оператор, системное доверие не меняется.
-- B603 в prepare/preview/quality: команды составляются Local как список аргументов,
+- B603 в prepare/preview/quality: команды составляются Deployment как список аргументов,
   выполняются установленными CLI без shell. Пути, release aliases и публикация
   проверяются до изменения готовой выдачи. Quality запускает только анализаторы,
   синтаксические проверки, статический Compose config и тесты.
@@ -58,7 +64,7 @@ YAML форматирует Prettier; yamllint проверяет структу
 проходят только форматирование; учебное содержание зависимостей не меняется.
 
 Установленный ansible-core может печатать сообщения о deprecated встроенных
-callback plugins `oneline` и `tree` при перечислении plugin API. Local их не
+callback plugins `oneline` и `tree` при перечислении plugin API. Deployment их не
 использует; то же сообщение воспроизводится командой `ansible-doc -t callback -l`.
 Это предупреждение инструмента, а lint результат playbooks остаётся
 `0 failure(s), 0 warning(s)`; глобальное подавление deprecations не включено.

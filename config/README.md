@@ -1,5 +1,10 @@
 # Инфраструктурная конфигурация
 
+Самостоятельный `compose.runtime.yml` использует готовые native configs/TLS и
+заранее восстановленные bind данные без init, bootstrap и Moodle. Его входы и
+границы описаны в [steady runtime](../docs/runtime.md). Описание ниже относится
+к сохранённому базовому fixture `compose.yml` и его overrides.
+
 Базовый `compose.yml` не принимает и не импортирует курсы. Он запускает PL с пустым постоянным каталогом `/course`, тестовую Moodle, HTTPS-прокси и узкую первоначальную настройку native administrator. Получение артефактов и штатные Platform bootstrap/sync остаются за границей этого репозитория.
 
 `config-init` получает переменные, уже раскрытые самим Docker Compose. Собственного `.env` parser нет. Он создаёт только локальные ключи PL, тестовые Moodle accounts/password, TLS и обычные конфигурации серверов. Повторная инициализация не заменяет ключи и аккаунты. Системное доверие CA не устанавливается.
@@ -9,6 +14,10 @@
 Состояние монтируется каталогом `/state`; конфигурационные файлы не требуются на этапе создания контейнеров. PL и admin получают только read-only config-каталог `/run/base-pl` и подключают его файл ссылкой в штатный `/PrairieLearn/config.json` после завершения init. Nginx читает `/state/nginx.conf` после готовности PL и Moodle. PostgreSQL Moodle читает password-файл из read-only каталога после init. Это устраняет зависимость первого `up` от заранее существующих generated bind files.
 
 Moodle пишет публичную регистрацию в `/state/moodle/registration.json`. Отдельный output-каталог принадлежит www-data; accounts и DB password доступны группе 33 только для чтения. Корень state даёт traversal, private TLS key остаётся 0600. Наличие тестовой Moodle activity ещё не означает работающий PL LTI-вход.
+
+Обычный `proxy` — HTTPS reverse proxy Nginx. Экзаменационные forward proxy и
+контроллер не входят в базовый Compose или dev-preview; будущий договор с
+`exam-lab` определяется отдельно после Windows-пилота.
 
 ## Необязательный auth override
 
