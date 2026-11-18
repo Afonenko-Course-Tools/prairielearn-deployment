@@ -73,3 +73,18 @@ docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/co
 ```sh
 docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/compose.probe.yml" down
 ```
+
+## Результат проверки 18 ноября 2026 года
+
+В одноразовом контейнере `wazuh-manager:4.14.10` проверки конфигурации
+`wazuh-analysisd -t` и `wazuh-execd -t` прошли. Менеджер декодировал
+синтетические записи Windows EventChannel, поданные в его локальную очередь.
+Первый вариант правила с родителем `60003` дал `FAIL`: совпадений не было.
+Вариант с родителем `60601` дал `PASS`: одна тревога `110610` для записи
+`101`, ни одной для трёх записей с другим поставщиком, каналом или ID события.
+Штатные контрольные правила `5710` и `60012` также сработали.
+[Штатные правила Wazuh для журнала Application](https://github.com/wazuh/wazuh/blob/v4.14.10/ruleset/rules/0585-win-application_rules.xml#L19-L25)
+
+Фактическая доставка от агента Windows, вызов Active Response, экран и локальное
+подтверждение, запуск полного Compose с проверкой канала и сохранности томов,
+а также развёртывание Proxmox имеют статус `NOT_TESTED`.
