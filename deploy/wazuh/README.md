@@ -10,13 +10,22 @@ Docker публикует только TCP 1514 на выбранном адре
 сегментов. Dashboard использует тестовые учётные данные upstream и предназначен
 для доступа с самого Docker-хоста.
 
+Для одноразовой QEMU VM с пользовательской сетью можно сохранить `restrict=on`
+и перед очередным запуском добавить в её `-netdev user` одну явную переадресацию
+`guestfwd=tcp:<свободный-виртуальный-IPv4>:1514-tcp:127.0.0.1:1514`.
+На Docker-хосте укажите `WAZUH_AGENT_BIND_IP=127.0.0.1`, на агенте — выбранный
+виртуальный IPv4. Проверьте соединение с TCP 1514 из VM и недоступность порта с
+другого узла. Учитывайте адрес после переадресации при регистрации агента.
+[Сеть QEMU](https://www.qemu.org/docs/master/system/invocation.html)
+
 Нужны Docker Compose 2.24.4+ (операторы `!override` и `!reset`), минимум
 8 ГБ RAM и 50 ГБ диска по требованиям Wazuh и `vm.max_map_count >= 262144`.
 Проверьте доступную память перед запуском вместе с Windows и PrairieLearn.
 Сгенерированные TLS-ключи, ключ агента и тома хранятся вне Git.
 
 В корне Deployment задайте собственные абсолютные пути и адрес изолированного
-сегмента. Для повторного пуска используйте те же каталог и имя проекта.
+сегмента. Для повторного пуска используйте те же каталоги и имя проекта.
+Первичная подготовка и загрузка образов выполняются один раз.
 
 ```sh
 export WAZUH_PROBE_DIR="$PWD/deploy/wazuh"
@@ -29,9 +38,11 @@ test "$(git -C "$WAZUH_PROBE_STATE/upstream" rev-parse HEAD)" = 76ddb88b9c8b618a
 cd "$WAZUH_PROBE_STATE/upstream/single-node"
 cat config/wazuh_cluster/wazuh_manager.conf "$WAZUH_PROBE_DIR/active-response.xml" > "$WAZUH_PROBE_STATE/wazuh_manager.conf"
 
-docker compose -p exam-wazuh-probe -f generate-indexer-certs.yml run --rm generator
+docker compose -p exam-wazuh-probe -f generate-indexer-certs.yml pull
+docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/compose.probe.yml" pull
+docker compose -p exam-wazuh-probe -f generate-indexer-certs.yml run --rm --pull never generator
 docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/compose.probe.yml" config --quiet
-docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/compose.probe.yml" up -d
+docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/compose.probe.yml" up -d --pull never
 ```
 
 Перед пробой проверьте состояние трёх контейнеров, готовность Dashboard и
@@ -55,4 +66,9 @@ docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/co
 `/var/ossec/logs/alerts/alerts.json`; подтвердите ровно одно совпадение и
 локальный показ по инструкции exam-lab. При повторной проверке сделайте
 `down` и `up -d` с теми же параметрами, убедитесь в сохранности агента
-и прежней тревоги. Остановка без `-v` сохраняет тома.
+и прежней тревоги. Из того же каталога и с теми же переменными остановите
+только проект Wazuh. Тома сохраняются.
+
+```sh
+docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/compose.probe.yml" down
+```
