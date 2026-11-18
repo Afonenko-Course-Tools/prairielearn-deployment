@@ -1,0 +1,51 @@
+# Явное дополнение тестовой Moodle fixture с compose.auth.yml. Только локальный стенд.
+name: ${EXAM_PROJECT_NAME:?Задайте отдельный проект экзаменационной fixture}
+
+services:
+  proxy:
+    command: [nginx, -c, /etc/nginx/exam/nginx.conf, -g, "daemon off;"]
+    ports: !reset []
+    volumes:
+      - type: bind
+        source: ${EXAM_NGINX_CONF_DIR:?Нужен каталог nginx.conf и ingress.conf экзаменационной fixture}
+        target: /etc/nginx/exam
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${GATEWAY_CONFIG_DIR:?Нужен каталог конфигурации экзаменационного Gateway}/exam-proxy-token.conf
+        target: /etc/nginx/private/exam-proxy-token.conf
+        read_only: true
+        bind: { create_host_path: false }
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - --show-error
+        - --noproxy
+        - "*"
+        - --cacert
+        - /state/tls/ca.crt
+        - --connect-to
+        - ${PL_HOST:?}:${PL_HTTPS_PORT:?}:127.0.0.1:${PL_HTTPS_PORT:?}
+        - https://${PL_HOST:?}:${PL_HTTPS_PORT:?}/healthz
+    networks:
+      exam-ingress:
+        ipv4_address: 172.16.251.2
+
+  exam-proxy:
+    extends:
+      file: ./deploy/exam-compose.yml
+      service: exam-proxy
+    network_mode: !reset null
+    ports:
+      - "127.0.0.1:20580:20580"
+    networks:
+      exam-ingress:
+        ipv4_address: 172.16.251.3
+
+networks:
+  exam-ingress:
+    ipam:
+      config: [{ subnet: 172.16.251.0/29 }]
