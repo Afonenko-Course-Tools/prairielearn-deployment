@@ -1,0 +1,13 @@
+# Moodle 5.3, тема Boost. В операторской копии подставьте Course Module ID
+# выбранного элемента и точные параметры его OIDC-регистрации.
+acl moodle_auth_get method GET
+acl moodle_auth_form_method method GET POST
+acl moodle_auth_form urlpath_regex ^/login/index[.]php$
+acl moodle_auth_get_path urlpath_regex ^/login/index[.]php[?](loginredirect=1|testsession=[1-9][0-9]*)$
+acl moodle_auth_get_path urlpath_regex ^/mod/lti/(view|launch)[.]php[?]id=MOODLE_COURSE_MODULE_ID$
+acl moodle_auth_get_path urlpath_regex ^/theme/styles[.]php/boost/[0-9]+_[0-9]+/all$
+acl moodle_auth_get_path urlpath_regex ^/theme/font[.]php/boost/(core/[0-9]+/fa-solid-900|theme/[0-9]+/noto-sans/noto-sans-normal-(latin|cyrillic))[.]woff2$
+acl moodle_auth_get_path urlpath_regex ^/mod/lti/auth[.]php[?]scope=openid&response_type=id_token&response_mode=form_post&prompt=none&client_id=MOODLE_OIDC_CLIENT_ID&redirect_uri=MOODLE_OIDC_TARGET_REGEX&login_hint=[^&]+&lti_message_hint=[^&]+&state=[^&]+&nonce=[^&]+$
+
+http_access allow encrypted https_scheme moodle_name host_moodle client_moodle moodle_ip moodle_auth_form_method moodle_auth_form
+http_access allow encrypted https_scheme moodle_name host_moodle client_moodle moodle_ip moodle_auth_get moodle_auth_get_path
