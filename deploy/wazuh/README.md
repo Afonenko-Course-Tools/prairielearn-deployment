@@ -39,10 +39,10 @@ cd "$WAZUH_PROBE_STATE/upstream/single-node"
 cat config/wazuh_cluster/wazuh_manager.conf "$WAZUH_PROBE_DIR/active-response.xml" > "$WAZUH_PROBE_STATE/wazuh_manager.conf"
 
 docker compose -p exam-wazuh-probe -f generate-indexer-certs.yml pull
-docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/compose.probe.yml" pull
+docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/single-node.probe.yml" pull
 docker compose -p exam-wazuh-probe -f generate-indexer-certs.yml run --rm --pull never generator
-docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/compose.probe.yml" config --quiet
-docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/compose.probe.yml" up -d --pull never
+docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/single-node.probe.yml" config --quiet
+docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/single-node.probe.yml" up -d --pull never
 ```
 
 Перед пробой проверьте состояние трёх контейнеров, готовность Dashboard и
@@ -71,7 +71,7 @@ docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/co
 только проект Wazuh. Тома сохраняются.
 
 ```sh
-docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/compose.probe.yml" down
+docker compose -p exam-wazuh-probe -f docker-compose.yml -f "$WAZUH_PROBE_DIR/single-node.probe.yml" down
 ```
 
 ## Результат проверки 18 ноября 2026 года
