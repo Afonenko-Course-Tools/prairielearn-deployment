@@ -31,7 +31,7 @@ class ExamProxyComposeTests(unittest.TestCase):
         self.environment.update(self.inputs)
         self.environment["STATE_DIR"] = str(directory / "forbidden-fixture-state")
 
-    def compose(self, environment=None):
+    def compose(self, environment=None, files=("deploy/exam-compose.yml",)):
         return subprocess.run(  # nosec B603, B607 # fixed config argv and synthetic paths, no daemon
             [
                 "docker",
@@ -40,8 +40,7 @@ class ExamProxyComposeTests(unittest.TestCase):
                 "/dev/null",
                 "--profile",
                 "exam",
-                "-f",
-                "deploy/exam-compose.yml",
+                *(part for name in files for part in ("-f", name)),
                 "config",
                 "--format",
                 "json",
@@ -99,3 +98,66 @@ class ExamProxyComposeTests(unittest.TestCase):
                     result = self.compose(environment)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn(variable, result.stderr)
+
+    def test_fixture_publishes_only_squid_and_keeps_native_mounts_read_only(self):
+        directory = Path(self.temporary.name)
+        environment = dict(
+            self.environment,
+            COMPOSE_PROJECT_NAME=self.inputs["EXAM_PROJECT_NAME"],
+            EXAM_NGINX_CONF_DIR=str(directory / "exam-nginx"),
+            EXAM_INGRESS_SUBNET="172.22.83.0/29",
+            EXAM_FIXTURE_GATEWAY="172.22.83.1",
+            EXAM_FIXTURE_NGINX_IP="172.22.83.2",
+            EXAM_FIXTURE_SQUID_IP="172.22.83.3",
+            EXAM_PROXY_PUBLISH_PORT="21680",
+            FIXTURE_NATIVE_DIR=str(directory / "native"),
+            FIXTURE_REGISTRY=str(directory / "registry.json"),
+            FIXTURE_COURSE_KEY="java-test",
+            PL_CONFIG_FILE=str(directory / "native-config.json"),
+            BRIDGE_CONFIG_DIR=str(directory / "bridge"),
+            GATEWAY_CONFIG_DIR=str(directory / "gateway"),
+            GATEWAY_RUN_AS="1575:1576",
+            PL_HOST="pl.example.test",
+            PL_HTTPS_PORT="21644",
+        )
+        result = self.compose(
+            environment,
+            files=(
+                "compose.yml",
+                "deploy/fixture-native.yml",
+                "compose.auth.yml",
+                "deploy/exam-fixture.yml",
+            ),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        model = json.loads(result.stdout)
+        services = model["services"]
+        self.assertEqual(
+            {name for name, service in services.items() if service.get("ports")},
+            {"exam-proxy"},
+        )
+        squid = services["exam-proxy"]
+        published = squid["ports"][0]
+        self.assertEqual(
+            (published["host_ip"], published["published"], published["target"]),
+            ("127.0.0.1", "21680", 20580),
+        )
+        self.assertNotIn("network_mode", squid)
+        self.assertEqual(
+            squid["networks"], {"exam-ingress": {"ipv4_address": "172.22.83.3"}}
+        )
+        self.assertEqual(
+            model["networks"]["exam-ingress"]["ipam"]["config"],
+            [{"subnet": "172.22.83.0/29", "gateway": "172.22.83.1"}],
+        )
+        native = {mount["target"]: mount for mount in services["pl"]["volumes"]}
+        self.assertTrue(native["/course/java-test/current"]["read_only"])
+        self.assertTrue(native["/run/deployment/courses.json"]["read_only"])
+        self.assertEqual(
+            services["config-init"]["environment"]["FIXTURE_NATIVE_LTI"], "1"
+        )
+        self.assertEqual(services["gateway"]["user"], "1575:1576")
+        self.assertEqual(
+            services["gateway-data-init"]["environment"]["GATEWAY_DATA_OWNER"],
+            "1575:1576",
+        )
