@@ -249,3 +249,38 @@ class FixtureSourceTests(unittest.TestCase):
         ):
             with self.subTest(inputs=inputs), self.assertRaises(ValueError):
                 fixture_exam.publication(inputs)
+
+
+class ControllerTlsTests(unittest.TestCase):
+    def test_strict_server_certificate_can_be_renewed_with_same_ca(self):
+        with tempfile.TemporaryDirectory(prefix="controller-tls-") as directory:
+            state = Path(directory)
+            prepare = [
+                "bash",
+                str(ROOT / "scripts/exam-controller-tls.sh"),
+                str(state),
+                "--server",
+                "10.135.250.231",
+            ]
+            verify = [
+                "openssl",
+                "verify",
+                "-x509_strict",
+                "-purpose",
+                "sslserver",
+                "-verify_ip",
+                "10.135.250.231",
+                "-CAfile",
+                str(state / "tls/ca.crt"),
+                str(state / "tls/server.crt"),
+            ]
+            subprocess.run(prepare, check=True, capture_output=True)  # nosec B603
+            subprocess.run(verify, check=True, capture_output=True)  # nosec B603
+            ca = (state / "controller-ca.cer").read_bytes()
+            leaf = (state / "tls/server.crt").read_bytes()
+            subprocess.run(  # nosec B603 # fixed controller test argv
+                [*prepare, "--renew"], check=True, capture_output=True
+            )
+            subprocess.run(verify, check=True, capture_output=True)  # nosec B603
+            self.assertEqual(ca, (state / "controller-ca.cer").read_bytes())
+            self.assertNotEqual(leaf, (state / "tls/server.crt").read_bytes())

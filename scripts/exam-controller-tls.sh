@@ -82,11 +82,13 @@ issue_leaf() {
 basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always
 subjectAltName=IP:$certificate_ip
 EOF
   openssl x509 -req -in "$output/server.csr" -CA "$issuer/ca.crt" -CAkey "$issuer/ca.key" \
     -days 180 -sha256 -extfile "$output/server.ext" -out "$output/server.crt" 2>>"$output/openssl.log"
-  openssl verify -purpose sslserver -verify_ip "$certificate_ip" \
+  openssl verify -x509_strict -purpose sslserver -verify_ip "$certificate_ip" \
     -CAfile "$issuer/ca.crt" "$output/server.crt" >/dev/null
   rm -- "$output/server.csr" "$output/server.ext" "$output/openssl.log"
 }
@@ -117,6 +119,7 @@ if [[ ! -e "$state/tls" || "$renew" = true ]]; then
     openssl req -x509 -newkey rsa:3072 -sha256 -noenc -days 365 -subj '/CN=Exam lab controller CA' \
       -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
       -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+      -addext 'subjectKeyIdentifier=hash' \
       -keyout "$temporary/ca.key" -out "$temporary/ca.crt" 2>"$temporary/openssl.log"
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
       -out "$temporary/server.key" 2>>"$temporary/openssl.log"
