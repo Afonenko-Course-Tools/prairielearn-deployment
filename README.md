@@ -16,14 +16,20 @@
 отдельный [steady runtime](docs/runtime.md) без fixture bootstrap и тестовой Moodle.
 Он ещё не подтверждает совместимость site layout действующей VM.
 
+Для локальной кампании можно отдельно запустить [Moodle и PrairieLearn с
+готовым Native-курсом](deploy/fixture-local.md). Команда `go-task fixture:up`
+связывает фактическую регистрацию Moodle с Native через Gateway и Bridge.
+Экзаменационная fixture дополнительно публикует Squid на loopback.
+
 ## Границы запуска и переименования
 
 Обычный `proxy` в `compose.yml` — Nginx reverse proxy для HTTPS к PL/Moodle и,
 при подключённом auth override, Gateway. Это не экзаменационный forward proxy.
 `go-task up COURSE=…` использует отдельный `compose.preview.yml` и не запускает
 этот Nginx, Moodle или Gateway. Ни один из этих запусков сейчас не поднимает
-экзаменационный прокси или контроллер. Их будущая интеграция с `exam-lab` должна
-быть явной и необязательной; договор контроллера уточняется после Windows-пилота.
+экзаменационный прокси или контроллер. Локальный
+[TLS-вход контроллера exam-lab](deploy/fixture-local.md#https-контроллера)
+поднимают отдельной командой.
 
 Прежнее имя репозитория — `prairielearn-local`. Переименование GitHub не меняет
 Compose project: default `prairielearn-local` сохранён намеренно, как и имена

@@ -7,6 +7,42 @@ vars:
   SITE_URL: '{{if eq .COURSE "java"}}http://127.0.0.1:8088/{{else}}http://127.0.0.1:8089/{{end}}'
 
 tasks:
+  fixture:up:
+    desc: Поднять отдельную обычную или экзаменационную Moodle/PrairieLearn fixture
+    requires:
+      vars:
+        - FIXTURE_ENV
+        - name: FIXTURE
+          enum: [ordinary, exam]
+    env:
+      LOCAL_FIXTURE_ENV: "{{.FIXTURE_ENV}}"
+      LOCAL_FIXTURE_KIND: "{{.FIXTURE}}"
+    cmds:
+      - python3 scripts/fixture.py up --env-file "$LOCAL_FIXTURE_ENV" --kind "$LOCAL_FIXTURE_KIND"
+  fixture:status:
+    desc: Показать состояние отдельной fixture
+    requires:
+      vars:
+        - FIXTURE_ENV
+        - name: FIXTURE
+          enum: [ordinary, exam]
+    env:
+      LOCAL_FIXTURE_ENV: "{{.FIXTURE_ENV}}"
+      LOCAL_FIXTURE_KIND: "{{.FIXTURE}}"
+    cmds:
+      - python3 scripts/fixture.py status --env-file "$LOCAL_FIXTURE_ENV" --kind "$LOCAL_FIXTURE_KIND"
+  fixture:down:
+    desc: Остановить отдельную fixture с сохранением данных и ключей
+    requires:
+      vars:
+        - FIXTURE_ENV
+        - name: FIXTURE
+          enum: [ordinary, exam]
+    env:
+      LOCAL_FIXTURE_ENV: "{{.FIXTURE_ENV}}"
+      LOCAL_FIXTURE_KIND: "{{.FIXTURE}}"
+    cmds:
+      - python3 scripts/fixture.py down --env-file "$LOCAL_FIXTURE_ENV" --kind "$LOCAL_FIXTURE_KIND"
   check:
     desc: Все проверки собственных файлов Local без запуска контейнеров
     env:

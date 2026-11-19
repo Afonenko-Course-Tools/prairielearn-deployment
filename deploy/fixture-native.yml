@@ -1,0 +1,21 @@
+# Дополнение отдельной тестовой fixture. Обычный запуск его не подключает.
+services:
+  config-init:
+    environment:
+      FIXTURE_NATIVE_LTI: "1"
+  moodle:
+    image: ${FIXTURE_MOODLE_IMAGE:-${COMPOSE_PROJECT_NAME:?Нужен отдельный проект}-moodle:5.3}
+  moodle-init:
+    image: ${FIXTURE_MOODLE_IMAGE:-${COMPOSE_PROJECT_NAME:?Нужен отдельный проект}-moodle:5.3}
+  pl:
+    volumes:
+      - type: bind
+        source: ${FIXTURE_NATIVE_DIR:?Нужен checkout опубликованной Native-поставки}
+        target: /course/${FIXTURE_COURSE_KEY:?Нужен ключ Native-курса}/current
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${FIXTURE_REGISTRY:?Нужен штатный реестр Platform}
+        target: /run/deployment/courses.json
+        read_only: true
+        bind: { create_host_path: false }

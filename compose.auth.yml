@@ -55,11 +55,13 @@ services:
   gateway-data-init:
     image: ${GATEWAY_IMAGE:-ghcr.io/afonenko-course-tools/moodle-prairielearn-gateway@sha256:9a46942a4085bcf4294647b2f5461fb9dc328fc610214a0b627b75ded7f75f87}
     user: "0:0"
+    environment:
+      GATEWAY_DATA_OWNER: ${GATEWAY_RUN_AS:-1000:1000}
     entrypoint:
       [
         python,
         -c,
-        "import os; os.chown('/var/lib/gateway',1000,1000); os.chmod('/var/lib/gateway',0o700)",
+        "import os; uid,gid=map(int,os.environ['GATEWAY_DATA_OWNER'].split(':')); os.chown('/var/lib/gateway',uid,gid); os.chmod('/var/lib/gateway',0o700)",
       ]
     volumes: [gateway-data:/var/lib/gateway]
     mem_limit: 64m
@@ -68,6 +70,7 @@ services:
 
   gateway:
     image: ${GATEWAY_IMAGE:-ghcr.io/afonenko-course-tools/moodle-prairielearn-gateway@sha256:9a46942a4085bcf4294647b2f5461fb9dc328fc610214a0b627b75ded7f75f87}
+    user: ${GATEWAY_RUN_AS:-}
     volumes:
       - type: bind
         source: ${GATEWAY_CONFIG_DIR:?Нужен каталог готового Gateway runtime.json и его секретов}

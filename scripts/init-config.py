@@ -10,6 +10,7 @@ import re
 import secrets
 import subprocess  # nosec B404 # explicit argv process API; no shell
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -68,8 +69,6 @@ def port(value):
 
 def tls(state, pl_host, moodle_host):
     directory = state / "tls"
-    directory.mkdir(exist_ok=True)
-    directory.chmod(0o755)
     names = ["ca.key", "ca.crt", "server.key", "server.crt"]
     existing = [(directory / name).exists() for name in names]
     if all(existing):
@@ -87,89 +86,98 @@ def tls(state, pl_host, moodle_host):
                 check=True,
                 capture_output=True,
             )
+        directory.chmod(0o755)
         return
-    if any(existing):
+    if any(existing) or (directory.exists() and any(directory.iterdir())):
         raise ValueError("Неполный TLS state: существующие ключи не заменены")
     old_umask = os.umask(0o077)
     try:
-        subprocess.run(  # nosec B603, B607 # installed openssl/CLI from operator PATH; fixed argv, shell=False
-            [
-                "openssl",
-                "req",
-                "-x509",
-                "-newkey",
-                "rsa:3072",
-                "-sha256",
-                "-nodes",
-                "-days",
-                "3650",
-                "-subj",
-                "/CN=PrairieLearn local CA",
-                "-addext",
-                "basicConstraints=critical,CA:TRUE",
-                "-addext",
-                "keyUsage=critical,keyCertSign,cRLSign",
-                "-keyout",
-                str(directory / "ca.key"),
-                "-out",
-                str(directory / "ca.crt"),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(  # nosec B603, B607 # installed openssl/CLI from operator PATH; fixed argv, shell=False
-            [
-                "openssl",
-                "req",
-                "-new",
-                "-newkey",
-                "rsa:2048",
-                "-nodes",
-                "-subj",
-                "/CN=" + pl_host,
-                "-keyout",
-                str(directory / "server.key"),
-                "-out",
-                str(directory / "server.csr"),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        extension = directory / "server.ext"
-        extension.write_text(
-            "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:"
-            + pl_host
-            + ",DNS:"
-            + moodle_host
-            + "\n"
-        )
-        subprocess.run(  # nosec B603, B607 # installed openssl/CLI from operator PATH; fixed argv, shell=False
-            [
-                "openssl",
-                "x509",
-                "-req",
-                "-in",
-                str(directory / "server.csr"),
-                "-CA",
-                str(directory / "ca.crt"),
-                "-CAkey",
-                str(directory / "ca.key"),
-                "-CAcreateserial",
-                "-days",
-                "825",
-                "-sha256",
-                "-extfile",
-                str(extension),
-                "-out",
-                str(directory / "server.crt"),
-            ],
-            check=True,
-            capture_output=True,
-        )
+        with tempfile.TemporaryDirectory(prefix=".tls-", dir=state) as temporary:
+            staging = Path(temporary)
+            create_tls(staging, pl_host, moodle_host)
+            for name in ("ca.crt", "server.crt"):
+                (staging / name).chmod(0o644)
+            staging.chmod(0o755)
+            staging.replace(directory)
     finally:
         os.umask(old_umask)
-    for name in ("ca.crt", "server.crt"):
-        (directory / name).chmod(0o644)
+
+
+def create_tls(directory, pl_host, moodle_host):
+    subprocess.run(  # nosec B603, B607 # installed openssl/CLI from operator PATH; fixed argv, shell=False
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:3072",
+            "-sha256",
+            "-nodes",
+            "-days",
+            "3650",
+            "-subj",
+            "/CN=PrairieLearn local CA",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
+            "-keyout",
+            str(directory / "ca.key"),
+            "-out",
+            str(directory / "ca.crt"),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(  # nosec B603, B607 # installed openssl/CLI from operator PATH; fixed argv, shell=False
+        [
+            "openssl",
+            "req",
+            "-new",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-subj",
+            "/CN=" + pl_host,
+            "-keyout",
+            str(directory / "server.key"),
+            "-out",
+            str(directory / "server.csr"),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    extension = directory / "server.ext"
+    extension.write_text(
+        "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:"
+        + pl_host
+        + ",DNS:"
+        + moodle_host
+        + "\n"
+    )
+    subprocess.run(  # nosec B603, B607 # installed openssl/CLI from operator PATH; fixed argv, shell=False
+        [
+            "openssl",
+            "x509",
+            "-req",
+            "-in",
+            str(directory / "server.csr"),
+            "-CA",
+            str(directory / "ca.crt"),
+            "-CAkey",
+            str(directory / "ca.key"),
+            "-CAcreateserial",
+            "-days",
+            "825",
+            "-sha256",
+            "-extfile",
+            str(extension),
+            "-out",
+            str(directory / "server.crt"),
+        ],
+        check=True,
+        capture_output=True,
+    )
 
 
 def prepare(state, values, jobs):
@@ -205,10 +213,15 @@ def prepare(state, values, jobs):
         )
     tls(state, pl_host, moodle_host)
     config_path = state / "pl/config.json"
+    fixture_lti = values.get("FIXTURE_NATIVE_LTI") == "1"
     if config_path.exists():
         config = json.loads(config_path.read_text())
         if not isinstance(config, dict):
             raise ValueError("Ожидается объект native PL config")
+        if fixture_lti and config.get("hasShib") is not True:
+            raise ValueError(
+                "Для LTI fixture требуется отдельное состояние с hasShib=true"
+            )
         addresses = {
             "hostname": pl_host,
             "serverCanonicalHost": f"https://{pl_host}:{pl_port}",
@@ -230,7 +243,7 @@ def prepare(state, values, jobs):
                 "hostname": pl_host,
                 "serverCanonicalHost": f"https://{pl_host}:{pl_port}",
                 "cookieDomain": cookie_domain(pl_host),
-                "hasShib": False,
+                "hasShib": fixture_lti,
                 "coursesRoot": "/course",
                 "trustProxy": 1,
                 "databaseEncryptionKey": token(state / "database-key"),
