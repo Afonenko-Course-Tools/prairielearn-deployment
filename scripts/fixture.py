@@ -188,8 +188,7 @@ def link_services(
     registration: dict[str, Any],
     pl_origin: str,
     moodle_origin: str,
-    exam_id: str | None,
-    squid_client: str | None,
+    exam: fixture_exam.Exam | None,
 ) -> None:
     key, instance = binding["courseKey"], binding["instance"]
     registration = registration["registration"]
@@ -243,18 +242,18 @@ def link_services(
             },
         },
     }
-    if exam_id is not None:
+    if exam:
         proxy_token = token(gateway / "exam-proxy-token")
         atomic_text(
             gateway / "exam-proxy-token.conf",
             f'proxy_set_header X-Exam-Proxy-Token "{proxy_token}";\n',
         )
         course["examAudit"] = {
-            "examId": exam_id,
+            "examId": exam.exam_id,
             "activities": ["catalog"],
             "database": "/var/lib/gateway/exam.sqlite",
             "proxyTokenFile": "/run/config/exam-proxy-token",
-            "classroomCidrs": [f"{squid_client}/32"],
+            "classroomCidrs": [exam.client_cidr],
             "restrictLaunchToClassroom": True,
         }
     ensure_value(
@@ -308,10 +307,23 @@ def fixture(action: str, env_file: Path, kind: str) -> None:
         f"https://{moodle_host}:{moodle_port}",
     )
     state = directory / "state"
+    publish_ip = fixture_exam.publication(inputs)
+    server = publish_ip != fixture_exam.LOOPBACK
+    if (
+        server
+        and kind == "ordinary"
+        and (pl_port, moodle_port) != fixture_exam.SERVER_ORDINARY_PORTS
+    ):
+        raise ValueError(
+            "Для серверного обычного контроля PL требует порт 21646, Moodle — 21645"
+        )
     env = {
         "STATE_DIR": str(state),
         "HOST_JOBS_DIR": str(directory / "jobs"),
-        "BIND_IP": "127.0.0.1",
+        "BIND_IP": str(publish_ip if kind == "ordinary" else fixture_exam.LOOPBACK),
+        "FIXTURE_WEB_CLIENT_CIDR": (
+            str(fixture_exam.SERVER_CLIENTS) if server and kind == "ordinary" else ""
+        ),
         "FIXTURE_COURSE_KEY": key,
         "FIXTURE_NATIVE_DIR": str(native),
         "FIXTURE_REGISTRY": str(registry),
@@ -321,7 +333,9 @@ def fixture(action: str, env_file: Path, kind: str) -> None:
         "GATEWAY_CONFIG_DIR": str(directory / "gateway"),
         "GATEWAY_RUN_AS": f"{os.getuid()}:{os.getgid()}",
     }
-    exam = fixture_exam.settings(directory, inputs) if kind == "exam" else None
+    exam = (
+        fixture_exam.settings(directory, inputs, publish_ip) if kind == "exam" else None
+    )
     if exam:
         env["EXAM_PROJECT_NAME"] = project
         env.update(exam.environment)
@@ -341,7 +355,7 @@ def fixture(action: str, env_file: Path, kind: str) -> None:
         if exam
         else common
     )
-    identity = {
+    identity: dict[str, Any] = {
         "project": project,
         "kind": kind,
         "record": record,
@@ -350,6 +364,8 @@ def fixture(action: str, env_file: Path, kind: str) -> None:
         "origins": [pl_origin, moodle_origin],
         "exam": exam.identity if exam else None,
     }
+    if server:
+        identity["serverIP"] = str(publish_ip)
 
     with (directory / ".lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -408,8 +424,7 @@ def fixture(action: str, env_file: Path, kind: str) -> None:
             registration,
             pl_origin,
             moodle_origin,
-            exam.exam_id if exam else None,
-            exam.client if exam else None,
+            exam,
         )
         if exam:
             fixture_exam.configure(

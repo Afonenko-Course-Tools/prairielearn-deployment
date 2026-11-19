@@ -3,6 +3,7 @@ services:
   config-init:
     environment:
       FIXTURE_NATIVE_LTI: "1"
+      FIXTURE_WEB_CLIENT_CIDR: ${FIXTURE_WEB_CLIENT_CIDR:-}
   moodle:
     image: ${FIXTURE_MOODLE_IMAGE:-${COMPOSE_PROJECT_NAME:?Нужен отдельный проект}-moodle:5.3}
   moodle-init:

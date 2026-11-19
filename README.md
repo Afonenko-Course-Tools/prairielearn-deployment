@@ -20,6 +20,8 @@
 готовым Native-курсом](deploy/fixture-local.md). Команда `go-task fixture:up`
 связывает фактическую регистрацию Moodle с Native через Gateway и Bridge.
 Экзаменационная fixture дополнительно публикует Squid на loopback.
+Явный [серверный режим](deploy/fixture-server.md) задаёт отдельные состояния
+и публикует только клиентские входы на выделенной VM.
 
 ## Границы запуска и переименования
 
