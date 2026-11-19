@@ -1,5 +1,6 @@
 """Штатный Compose config: optional proxy не получает state/dependencies fixture."""
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,12 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location(
+    "fixture_exam", ROOT / "scripts/fixture_exam.py"
+)
+assert SPEC is not None and SPEC.loader is not None  # nosec B101 # test-only loader invariant
+fixture_exam = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(fixture_exam)
 
 
 class ExamProxyComposeTests(unittest.TestCase):
@@ -120,15 +127,8 @@ class ExamProxyComposeTests(unittest.TestCase):
             PL_HOST="pl.example.test",
             PL_HTTPS_PORT="21644",
         )
-        result = self.compose(
-            environment,
-            files=(
-                "compose.yml",
-                "deploy/fixture-native.yml",
-                "compose.auth.yml",
-                "deploy/exam-fixture.yml",
-            ),
-        )
+        files = ("compose.yml", "deploy/fixture-native.yml", "compose.auth.yml")
+        result = self.compose(environment, files=(*files, "deploy/exam-fixture.yml"))
         self.assertEqual(result.returncode, 0, result.stderr)
         model = json.loads(result.stdout)
         services = model["services"]
@@ -161,3 +161,91 @@ class ExamProxyComposeTests(unittest.TestCase):
             services["gateway-data-init"]["environment"]["GATEWAY_DATA_OWNER"],
             "1575:1576",
         )
+
+        environment["EXAM_FIXTURE_PUBLISH_IP"] = "10.135.250.231"
+        server = self.compose(environment, files=(*files, "deploy/exam-fixture.yml"))
+        self.assertEqual(server.returncode, 0, server.stderr)
+        ports = {
+            name: service["ports"]
+            for name, service in json.loads(server.stdout)["services"].items()
+            if service.get("ports")
+        }
+        self.assertEqual(set(ports), {"exam-proxy"})
+        self.assertEqual(len(ports["exam-proxy"]), 1)
+        self.assertEqual(ports["exam-proxy"][0]["host_ip"], "10.135.250.231")
+
+        ordinary = self.compose(
+            dict(
+                environment,
+                BIND_IP="10.135.250.231",
+                FIXTURE_WEB_CLIENT_CIDR="10.0.0.0/8",
+            ),
+            files=files,
+        )
+        self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+        ordinary_services = json.loads(ordinary.stdout)["services"]
+        self.assertEqual(
+            {
+                name
+                for name, service in ordinary_services.items()
+                if service.get("ports")
+            },
+            {"proxy"},
+        )
+        self.assertEqual(
+            {port["host_ip"] for port in ordinary_services["proxy"]["ports"]},
+            {"10.135.250.231"},
+        )
+        self.assertIn(
+            "pl.example.test:21644:127.0.0.1:21644",
+            ordinary_services["proxy"]["healthcheck"]["test"],
+        )
+
+
+class FixtureSourceTests(unittest.TestCase):
+    def test_explicit_server_address_and_client_policy(self):
+        inputs = {
+            "EXAM_ID": "exam-pilot",
+            "EXAM_INGRESS_SUBNET": "172.16.252.0/29",
+            "EXAM_PROXY_PUBLISH_PORT": "21680",
+            "EXAM_PROXY_IMAGE": "example.invalid/squid:tested",
+            "GATEWAY_IMAGE": "example.invalid/gateway:tested",
+        }
+        local = fixture_exam.settings(ROOT, inputs, fixture_exam.publication(inputs))
+        server_inputs = dict(
+            inputs, FIXTURE_SCOPE="server", FIXTURE_SERVER_IP="10.135.250.231"
+        )
+        server = fixture_exam.settings(
+            ROOT, server_inputs, fixture_exam.publication(server_inputs)
+        )
+        self.assertEqual(local.environment["EXAM_FIXTURE_PUBLISH_IP"], "127.0.0.1")
+        self.assertEqual(local.client_cidr, "172.16.252.1/32")
+        self.assertEqual(
+            server.environment["EXAM_FIXTURE_PUBLISH_IP"], "10.135.250.231"
+        )
+        self.assertEqual(server.client_cidr, "10.0.0.0/8")
+        for invalid in (
+            dict(server_inputs, EXAM_INGRESS_SUBNET="10.220.0.0/29"),
+            dict(server_inputs, EXAM_PROXY_PUBLISH_PORT="21780"),
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                fixture_exam.settings(ROOT, invalid, server.publish_ip)
+
+    def test_invalid_server_selection_is_rejected(self):
+        for inputs in (
+            {"FIXTURE_SERVER_IP": "10.135.250.231"},
+            {"FIXTURE_SCOPE": "server"},
+            {"FIXTURE_SCOPE": "unexpected"},
+            *(
+                {"FIXTURE_SCOPE": "server", "FIXTURE_SERVER_IP": ip}
+                for ip in (
+                    "0.0.0.0",
+                    "127.0.0.1",
+                    "192.168.0.1",
+                    "10.0.0.0",
+                    "10.255.255.255",
+                )
+            ),
+        ):
+            with self.subTest(inputs=inputs), self.assertRaises(ValueError):
+                fixture_exam.publication(inputs)

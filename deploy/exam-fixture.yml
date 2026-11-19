@@ -1,4 +1,4 @@
-# Явное дополнение тестовой Moodle fixture с compose.auth.yml. Только локальный стенд.
+# Явное дополнение тестовой Moodle fixture с compose.auth.yml.
 name: ${EXAM_PROJECT_NAME:?Задайте отдельный проект экзаменационной fixture}
 
 services:
@@ -16,20 +16,6 @@ services:
         target: /etc/nginx/private/exam-proxy-token.conf
         read_only: true
         bind: { create_host_path: false }
-    healthcheck:
-      test:
-        - CMD
-        - curl
-        - --fail
-        - --silent
-        - --show-error
-        - --noproxy
-        - "*"
-        - --cacert
-        - /state/tls/ca.crt
-        - --connect-to
-        - ${PL_HOST:?}:${PL_HTTPS_PORT:?}:127.0.0.1:${PL_HTTPS_PORT:?}
-        - https://${PL_HOST:?}:${PL_HTTPS_PORT:?}/healthz
     networks:
       exam-ingress:
         ipv4_address: ${EXAM_FIXTURE_NGINX_IP:-172.16.251.2}
@@ -40,7 +26,7 @@ services:
       service: exam-proxy
     network_mode: !reset null
     ports:
-      - "127.0.0.1:${EXAM_PROXY_PUBLISH_PORT:-20580}:20580"
+      - "${EXAM_FIXTURE_PUBLISH_IP:-127.0.0.1}:${EXAM_PROXY_PUBLISH_PORT:-20580}:20580"
     networks:
       exam-ingress:
         ipv4_address: ${EXAM_FIXTURE_SQUID_IP:-172.16.251.3}

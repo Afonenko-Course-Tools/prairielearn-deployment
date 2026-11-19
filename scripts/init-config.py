@@ -67,6 +67,23 @@ def port(value):
     return number
 
 
+def restrict_fixture_web(config, network):
+    address = ipaddress.IPv4Network(network)
+    if config.count("http {") != 1 or config.count("  server {") != 2:
+        raise ValueError("Изменился шаблон Nginx для серверной fixture")
+    return config.replace(
+        "http {",
+        "http {\n"
+        "  geo $fixture_web_permitted {\n"
+        "    default 0;\n"
+        f"    {address} 1;\n"
+        "    127.0.0.1/32 1;\n"
+        "  }",
+    ).replace(
+        "  server {", "  server {\n    if ($fixture_web_permitted = 0) { return 403; }"
+    )
+
+
 def tls(state, pl_host, moodle_host):
     directory = state / "tls"
     names = ["ca.key", "ca.crt", "server.key", "server.crt"]
@@ -214,6 +231,7 @@ def prepare(state, values, jobs):
     tls(state, pl_host, moodle_host)
     config_path = state / "pl/config.json"
     fixture_lti = values.get("FIXTURE_NATIVE_LTI") == "1"
+    fixture_web_network = values.get("FIXTURE_WEB_CLIENT_CIDR") if fixture_lti else None
     if config_path.exists():
         config = json.loads(config_path.read_text())
         if not isinstance(config, dict):
@@ -268,6 +286,8 @@ def prepare(state, values, jobs):
             .replace("PL_PUBLIC_PORT", str(pl_port))
             .replace("MOODLE_PUBLIC_PORT", str(moodle_port))
         )
+        if fixture_web_network and source == "nginx.auth.conf":
+            rendered = restrict_fixture_web(rendered, fixture_web_network)
         (state / destination).write_text(rendered)
     print(
         "Инфраструктурные конфигурации готовы; ключи и аккаунты сохранены, системное доверие не менялось."

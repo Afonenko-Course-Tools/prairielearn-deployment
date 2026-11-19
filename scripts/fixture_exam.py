@@ -1,7 +1,7 @@
 """Подготавливает Squid и доверенный Nginx для отдельной экзаменационной fixture."""
 
 from dataclasses import dataclass
-from ipaddress import IPv4Network
+from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
 import re
 import subprocess  # nosec B404 # fixed operator CLI argv, no shell
@@ -9,18 +9,30 @@ from typing import Any
 from urllib.parse import quote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+SERVER_CLIENTS = IPv4Network("10.0.0.0/8")
+SERVER_ADDRESS = IPv4Address("10.135.250.231")
+SERVER_PROXY_PORT = 21680
+SERVER_ORDINARY_PORTS = (21646, 21645)
+LOOPBACK = IPv4Address("127.0.0.1")
 
 
 @dataclass(frozen=True)
 class Exam:
     directory: Path
     exam_id: str
-    client: str
+    gateway: str
     nginx: str
     squid: str
     subnet: IPv4Network
+    publish_ip: IPv4Address
     host_port: int
     image: str
+
+    @property
+    def client_cidr(self) -> str:
+        return (
+            f"{self.gateway}/32" if self.publish_ip == LOOPBACK else str(SERVER_CLIENTS)
+        )
 
     @property
     def identity(self) -> dict[str, str | int]:
@@ -34,15 +46,30 @@ class Exam:
             "EXAM_POLICY_DIR": str(self.directory / "policy"),
             "EXAM_TLS_DIR": str(self.directory / "tls"),
             "EXAM_STATE_DIR": str(self.directory / "state"),
+            "EXAM_FIXTURE_PUBLISH_IP": str(self.publish_ip),
             "EXAM_PROXY_PUBLISH_PORT": str(self.host_port),
             "EXAM_INGRESS_SUBNET": str(self.subnet),
-            "EXAM_FIXTURE_GATEWAY": self.client,
+            "EXAM_FIXTURE_GATEWAY": self.gateway,
             "EXAM_FIXTURE_NGINX_IP": self.nginx,
             "EXAM_FIXTURE_SQUID_IP": self.squid,
         }
 
 
-def settings(directory: Path, inputs: dict[str, str]) -> Exam:
+def publication(inputs: dict[str, str]) -> IPv4Address:
+    scope = inputs.get("FIXTURE_SCOPE", "local")
+    value = inputs.get("FIXTURE_SERVER_IP", "")
+    if scope == "local" and not value:
+        return LOOPBACK
+    if scope != "server" or not value:
+        raise ValueError("FIXTURE_SERVER_IP требует явного FIXTURE_SCOPE=server")
+    if value != str(SERVER_ADDRESS):
+        raise ValueError(
+            f"Серверный пилот использует только FIXTURE_SERVER_IP={SERVER_ADDRESS}"
+        )
+    return SERVER_ADDRESS
+
+
+def settings(directory: Path, inputs: dict[str, str], publish_ip: IPv4Address) -> Exam:
     name = inputs.get("EXAM_ID", "")
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", name):
         raise ValueError("Нужен EXAM_ID для регистрации экзамена в Gateway")
@@ -54,9 +81,13 @@ def settings(directory: Path, inputs: dict[str, str]) -> Exam:
         raise ValueError(
             "Укажите свободную частную IPv4 подсеть /29 для EXAM_INGRESS_SUBNET"
         )
+    if publish_ip != LOOPBACK and address.overlaps(SERVER_CLIENTS):
+        raise ValueError("Ingress Docker должен быть вне клиентской сети 10.0.0.0/8")
     port = int(inputs.get("EXAM_PROXY_PUBLISH_PORT", "0"))
     if not 1024 <= port <= 65535:
-        raise ValueError("Нужен локальный непривилегированный EXAM_PROXY_PUBLISH_PORT")
+        raise ValueError("Нужен непривилегированный EXAM_PROXY_PUBLISH_PORT")
+    if publish_ip != LOOPBACK and port != SERVER_PROXY_PORT:
+        raise ValueError(f"Серверный пилот использует порт Squid {SERVER_PROXY_PORT}")
     image = inputs.get("EXAM_PROXY_IMAGE", "")
     if not image or image.startswith("-"):
         raise ValueError("Укажите проверенный EXAM_PROXY_IMAGE")
@@ -69,6 +100,7 @@ def settings(directory: Path, inputs: dict[str, str]) -> Exam:
         str(address[2]),
         str(address[3]),
         address,
+        publish_ip,
         port,
         image,
     )
@@ -139,8 +171,10 @@ def render_squid(
     config = replacing(
         config,
         "acl exam_clients src 127.0.0.1/32",
-        f"acl exam_clients src {exam.client}/32",
+        f"acl exam_clients src {exam.client_cidr}",
     )
+    if exam.publish_ip != LOOPBACK:
+        config = replacing(config, "logformat exam %ts.", "logformat exam %>a %ts.")
     config = replacing(
         config, "acl tls_port port 443", f"acl tls_port port {pl.port} {moodle.port}"
     )

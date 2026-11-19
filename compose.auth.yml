@@ -102,6 +102,20 @@ services:
 
   proxy:
     command: [nginx, -c, /state/nginx-auth.conf, -g, "daemon off;"]
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - --show-error
+        - --noproxy
+        - "*"
+        - --cacert
+        - /state/tls/ca.crt
+        - --connect-to
+        - ${PL_HOST:-pl.infra.localhost}:${PL_HTTPS_PORT:-19444}:127.0.0.1:${PL_HTTPS_PORT:-19444}
+        - https://${PL_HOST:-pl.infra.localhost}:${PL_HTTPS_PORT:-19444}/healthz
     volumes:
       - type: bind
         source: ${GATEWAY_CONFIG_DIR:?Нужен каталог Gateway}/handoff-auth.conf

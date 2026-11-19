@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Изолированный TLS-вход контроллера на локальном стенде.
+# Изолированный TLS-вход контроллера.
 set -euo pipefail
 umask 077
 
-if (($# != 1)) || [[ "$1" != /* ]]; then
-  echo 'Укажите абсолютный путь закрытого каталога контроллера.' >&2
+usage() {
+  echo 'Укажите абсолютный путь: exam-controller-tls.sh КАТАЛОГ [--server 10.135.250.231 [--renew]]' >&2
   exit 64
+}
+
+if (($# < 1)) || [[ "$1" != /* ]]; then
+  usage
 fi
 if [[ ! -d "$1" || ! -O "$1" || -L "$1" || $(stat -c %a -- "$1") != 700 ]]; then
   echo 'Каталог контроллера должен принадлежать оператору и иметь права 0700.' >&2
@@ -13,43 +17,102 @@ if [[ ! -d "$1" || ! -O "$1" || -L "$1" || $(stat -c %a -- "$1") != 700 ]]; then
 fi
 
 state="$1"
+shift
+listen_ip=127.0.0.1
+certificate_ip=10.0.2.55
+acl=''
+renew=false
+if (($#)); then
+  if (($# < 2 || $# > 3)) || [[ "$1" != --server || "$2" != 10.135.250.231 ]]; then
+    usage
+  fi
+  listen_ip="$2"
+  certificate_ip="$2"
+  acl='allow 10.0.0.0/8; deny all;'
+  if (($# == 3)); then
+    [[ "$3" = --renew ]] || usage
+    renew=true
+  fi
+fi
+
 repository=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 exec 9>"$state/tls.lock"
 flock 9
-if [[ ! -e "$state/tls" ]]; then
-  temporary=$(mktemp -d -- "$state/.tls.XXXXXX")
-  trap 'rm -rf -- "$temporary"' EXIT
-  openssl req -x509 -newkey rsa:3072 -sha256 -noenc -days 365 -subj '/CN=Exam lab controller CA' \
-    -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
-    -addext 'keyUsage=critical,keyCertSign,cRLSign' \
-    -keyout "$temporary/ca.key" -out "$temporary/ca.crt" 2>"$temporary/openssl.log"
-  openssl req -new -newkey rsa:2048 -noenc -subj '/CN=Exam lab controller' \
-    -keyout "$temporary/server.key" -out "$temporary/server.csr" 2>>"$temporary/openssl.log"
-  cat >"$temporary/server.ext" <<'EOF'
+
+if [[ -e "$state/server-ip" ]]; then
+  if [[ $(<"$state/server-ip") != "$listen_ip" ]]; then
+    echo 'Каталог контроллера закреплён за другим адресом сервера.' >&2
+    exit 1
+  fi
+elif [[ -n "$acl" ]]; then
+  if [[ -e "$state/tls" || "$renew" = true ]]; then
+    echo 'Для первой серверной настройки нужен отдельный каталог без TLS.' >&2
+    exit 1
+  fi
+  printf '%s\n' "$listen_ip" >"$state/server-ip.tmp"
+  mv -T -- "$state/server-ip.tmp" "$state/server-ip"
+fi
+
+issue_leaf() {
+  local output="$1" issuer="$2" private_key="$3"
+  openssl req -new -key "$private_key" -subj '/CN=Exam lab controller' \
+    -out "$output/server.csr" 2>>"$output/openssl.log"
+  cat >"$output/server.ext" <<EOF
 basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=IP:10.0.2.55
+subjectAltName=IP:$certificate_ip
 EOF
-  openssl x509 -req -in "$temporary/server.csr" -CA "$temporary/ca.crt" -CAkey "$temporary/ca.key" \
-    -days 180 -sha256 -extfile "$temporary/server.ext" -out "$temporary/server.crt" 2>>"$temporary/openssl.log"
-  rm -- "$temporary/server.csr" "$temporary/server.ext" "$temporary/openssl.log"
-  mv -T -- "$temporary" "$state/tls"
+  openssl x509 -req -in "$output/server.csr" -CA "$issuer/ca.crt" -CAkey "$issuer/ca.key" \
+    -days 180 -sha256 -extfile "$output/server.ext" -out "$output/server.crt" 2>>"$output/openssl.log"
+  openssl verify -purpose sslserver -verify_ip "$certificate_ip" \
+    -CAfile "$issuer/ca.crt" "$output/server.crt" >/dev/null
+  rm -- "$output/server.csr" "$output/server.ext" "$output/openssl.log"
+}
+
+verify_keys() {
+  local directory="$1" name certificate_key private_key
+  for name in ca server; do
+    certificate_key=$(openssl x509 -in "$directory/$name.crt" -noout -pubkey)
+    private_key=$(openssl pkey -in "$directory/$name.key" -pubout)
+    if [[ "$certificate_key" != "$private_key" ]]; then
+      echo 'Ключ контроллера не соответствует сохранённому сертификату.' >&2
+      exit 1
+    fi
+  done
+}
+
+if [[ ! -e "$state/tls" || "$renew" = true ]]; then
+  temporary=$(mktemp -d -- "$state/.tls.XXXXXX")
+  trap 'rm -rf -- "$temporary"' EXIT
+  if [[ "$renew" = true ]]; then
+    verify_keys "$state/tls"
+    openssl verify -no_check_time -purpose sslserver -verify_ip "$certificate_ip" \
+      -CAfile "$state/tls/ca.crt" "$state/tls/server.crt" >/dev/null
+    issue_leaf "$temporary" "$state/tls" "$state/tls/server.key"
+    mv -T -- "$temporary/server.crt" "$state/tls/server.crt"
+    rmdir -- "$temporary"
+  else
+    openssl req -x509 -newkey rsa:3072 -sha256 -noenc -days 365 -subj '/CN=Exam lab controller CA' \
+      -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
+      -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+      -keyout "$temporary/ca.key" -out "$temporary/ca.crt" 2>"$temporary/openssl.log"
+    openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+      -out "$temporary/server.key" 2>>"$temporary/openssl.log"
+    issue_leaf "$temporary" "$temporary" "$temporary/server.key"
+    verify_keys "$temporary"
+    mv -T -- "$temporary" "$state/tls"
+  fi
   trap - EXIT
 fi
 
-openssl verify -purpose sslserver -verify_ip 10.0.2.55 -CAfile "$state/tls/ca.crt" "$state/tls/server.crt" >/dev/null
-for name in ca server; do
-  certificate_key=$(openssl x509 -in "$state/tls/$name.crt" -noout -pubkey)
-  private_key=$(openssl pkey -in "$state/tls/$name.key" -pubout)
-  if [[ "$certificate_key" != "$private_key" ]]; then
-    echo 'Ключ контроллера не соответствует сохранённому сертификату.' >&2
-    exit 1
-  fi
-done
+verify_keys "$state/tls"
+openssl verify -purpose sslserver -verify_ip "$certificate_ip" \
+  -CAfile "$state/tls/ca.crt" "$state/tls/server.crt" >/dev/null
 
 openssl x509 -in "$state/tls/ca.crt" -outform DER -out "$state/controller-ca.cer.tmp"
 mv -T -- "$state/controller-ca.cer.tmp" "$state/controller-ca.cer"
-install -m 600 -- "$repository/deploy/exam-controller.nginx.conf" "$state/nginx.conf.tmp"
+sed -e "s|CONTROLLER_BIND_IPV4|$listen_ip|g" -e "s|CONTROLLER_CLIENT_ACL|$acl|g" \
+  "$repository/deploy/exam-controller.nginx.conf" >"$state/nginx.conf.tmp"
 mv -T -- "$state/nginx.conf.tmp" "$state/nginx.conf"
 sha256sum -- "$state/controller-ca.cer"
