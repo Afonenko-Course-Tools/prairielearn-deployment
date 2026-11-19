@@ -39,6 +39,27 @@ repository=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 exec 9>"$state/tls.lock"
 flock 9
 
+protected_file() {
+  [[ -f "$1" && -s "$1" && -O "$1" && ! -L "$1" && $(stat -c %a -- "$1") = 600 ]]
+}
+
+teacher_route=''
+teacher_auth="$state/teacher.htpasswd"
+if [[ -n "$acl" && (-e "$teacher_auth" || -L "$teacher_auth") ]]; then
+  if ! protected_file "$teacher_auth" || ! protected_file "$state/teacher-proxy-token"; then
+    echo 'Файлы teacher.htpasswd и teacher-proxy-token должны принадлежать оператору, быть непустыми и иметь права 0600.' >&2
+    exit 1
+  fi
+  token_size=$(stat -c %s -- "$state/teacher-proxy-token")
+  teacher_token=$(<"$state/teacher-proxy-token")
+  if [[ ("$token_size" != 64 && "$token_size" != 65) || ! "$teacher_token" =~ ^[a-f0-9]{64}$ ]] ||
+    ! LC_ALL=C grep -aEqx '[a-f0-9]{64}' "$state/teacher-proxy-token"; then
+    echo 'teacher-proxy-token должен содержать 64 шестнадцатеричных символа в нижнем регистре.' >&2
+    exit 1
+  fi
+  teacher_route='include teacher-route.conf;'
+fi
+
 if [[ -e "$state/server-ip" ]]; then
   if [[ $(<"$state/server-ip") != "$listen_ip" ]]; then
     echo 'Каталог контроллера закреплён за другим адресом сервера.' >&2
@@ -112,7 +133,14 @@ openssl verify -purpose sslserver -verify_ip "$certificate_ip" \
 
 openssl x509 -in "$state/tls/ca.crt" -outform DER -out "$state/controller-ca.cer.tmp"
 mv -T -- "$state/controller-ca.cer.tmp" "$state/controller-ca.cer"
+if [[ -n "$teacher_route" ]]; then
+  install -m 600 -- "$repository/deploy/exam-controller-teacher.nginx.conf" "$state/teacher-route.conf.tmp"
+  mv -T -- "$state/teacher-route.conf.tmp" "$state/teacher-route.conf"
+  printf 'proxy_set_header X-Exam-Teacher-Proxy "%s";\n' "$teacher_token" >"$state/teacher-proxy-token.conf.tmp"
+  mv -T -- "$state/teacher-proxy-token.conf.tmp" "$state/teacher-proxy-token.conf"
+fi
 sed -e "s|CONTROLLER_BIND_IPV4|$listen_ip|g" -e "s|CONTROLLER_CLIENT_ACL|$acl|g" \
+  -e "s|CONTROLLER_TEACHER_ROUTE|$teacher_route|g" \
   "$repository/deploy/exam-controller.nginx.conf" >"$state/nginx.conf.tmp"
 mv -T -- "$state/nginx.conf.tmp" "$state/nginx.conf"
 sha256sum -- "$state/controller-ca.cer"

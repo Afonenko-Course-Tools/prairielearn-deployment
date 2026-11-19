@@ -99,8 +99,8 @@ IP SAN `10.135.250.231` и закрепит за каталогом адрес �
 ```sh
 install -d -m 700 /private/controller-server
 bash scripts/exam-controller-tls.sh /private/controller-server --server 10.135.250.231
-nginx -t -p /private/controller-server/ -c nginx.conf
-nginx -p /private/controller-server/ -c nginx.conf
+nginx -t -e stderr -p /private/controller-server/ -c nginx.conf
+nginx -e stderr -p /private/controller-server/ -c nginx.conf
 ```
 
 Для перевыпуска сертификата запустите тот же сценарий с `--renew`, проверьте
@@ -111,9 +111,33 @@ nginx -p /private/controller-server/ -c nginx.conf
 
 ```sh
 bash scripts/exam-controller-tls.sh /private/controller-server --server 10.135.250.231 --renew
-nginx -t -p /private/controller-server/ -c nginx.conf
-nginx -s reload -p /private/controller-server/ -c nginx.conf
+nginx -t -e stderr -p /private/controller-server/ -c nginx.conf
+nginx -s reload -e stderr -p /private/controller-server/ -c nginx.conf
 ```
+
+### Просмотр готовности преподавателем
+
+Если backend контроллера поддерживает панель, оператор создаёт в его серверном
+каталоге `teacher.htpasswd` и отдельный `teacher-proxy-token`. Для первой записи
+пароля используйте интерактивную команду `htpasswd` из `apache2-utils`.
+При следующей записи используйте существующий файл без `-c`.
+Пароль передайте преподавателю через административный канал. Токен используют
+только процессы контроллера и Nginx, запущенные от того же непривилегированного
+оператора. Передайте путь к токену в `serve --teacher-proxy-token-file` при
+запуске контроллера. При смене токена перезапустите контроллер и обновите Nginx.
+
+```sh
+(umask 077; htpasswd -cB /private/controller-server/teacher.htpasswd teacher)
+(umask 077; set -C; openssl rand -hex 32 > /private/controller-server/teacher-proxy-token)
+bash scripts/exam-controller-tls.sh /private/controller-server --server 10.135.250.231
+nginx -t -e stderr -p /private/controller-server/ -c nginx.conf
+nginx -s reload -e stderr -p /private/controller-server/ -c nginx.conf
+```
+
+Панель по пути [готовности](https://10.135.250.231:21650/exam/teacher/readiness)
+доступна после проверки сертификата, адреса клиента и отдельного пароля.
+Без файла `teacher.htpasswd` путь закрыт. Проверяйте отказ без пароля и с
+неверным паролем, а затем открытие панели с учёткой преподавателя.
 
 ## Доверие и проверки
 
